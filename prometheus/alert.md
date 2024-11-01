@@ -198,6 +198,8 @@ templates:
     message: '{{ template "wechat.tmpl" . }}  #应用上面已有的模板
 ```
 
+注：如果配置完成仍然无法接收到报价可以参考链接[2]。
+
 # 钉钉报警
 
 ## 创建报警机器人
@@ -313,4 +315,6 @@ route:
 # 参考链接
 
 [1]: https://www.cnblogs.com/east4ming/p/16917370.html	"根据 label 发送 alert 到邮箱"
+
+[2]: https://www.yuque.com/youngfit/qok2pe/gliiowczn15ktgiq#ZfjOU	"Prometheus 企业微信报警实战"
 
