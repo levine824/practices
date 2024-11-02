@@ -1,4 +1,4 @@
-# Mysql Exporter
+# Mysql_exporter
 
 ## 先决条件
 
@@ -9,7 +9,7 @@
 ## 创建 Mysql 用户
 
 ```sql
-# 在被监控 mysql 中执行如下 sql，创建 mysql-exporter 对应用户
+# 在被监控 mysql 中执行如下 sql，创建 mysql_exporter 对应用户
 CREATE USER 'mysqlexporter'@"%"  IDENTIFIED BY 'mysqlexporter';
 GRANT PROCESS, REPLICATION CLIENT, SELECT ON *.* TO 'mysqlexporter'@'%'  IDENTIFIED BY 'mysqlexporter' WITH MAX_USER_CONNECTIONS 30; 
 GRANT select on performance_schema.* to "mysqlexporter"@"%" IDENTIFIED BY 'mysqlexporter';
@@ -18,7 +18,7 @@ flush privileges;
 
 ## 安装 Mysql Exporter
 
-下载 mysql-exporter 的 chart：
+下载 mysql_exporter 的 chart：
 
 ```she
 helm search repo mysql-exporter
@@ -40,7 +40,7 @@ mysql:
   existingSecret: false
 ```
 
-安装 mysql-exporter：
+安装 mysql_exporter：
 
 ```shell
 helm install mysql-exporter -f values.yaml ./prometheus-mysql-exporter -n sdp-test
@@ -161,7 +161,92 @@ kubectl edit secrets alertmanager-kube-prometheus-stack-alertmanager -n monitori
 
 将 Alertmanager.yaml 后面的内容替换为 secrets.txt 中的内容，并删除 alertmanager-kube-prometheus-stack-alertmanager-generated secret。
 
+# Node_exporter
+
+## 方案
+
+利用 Prometheus 对 Kubernetes 集群监控，可以采用 Cadvisor + node-exporter + Prometheus + Grafana 的方案。
+
+- 容器监控：Prometheus 使用 Cadvisor 采集容器监控指标，而 Cadvisor 集成在 K8S 的 kubelet 中所以无需部署，通过 Prometheus进程存储，使用 Grafana 进行展示。
+- node 节点监控：node 端的监控通过 node_exporter 采集当前主机的资源，通过 Prometheus 进程存储，最后使用 Grafana 进行展示
+- master 节点监控：master 的监控通过 kube-state-metrics 插件从 K8S 获取到 apiserver 的相关数据并通过网页页面暴露出来，然后通过 Prometheus 进程存储，最后使用 Grafana 进行展示。
+
+## 部署
+
+本文介绍采用 Helm3 部署 kube-prometheus-stack，如果想要手工部署 Prometheus，可以参考链接[2]。
+
+```shell
+kubectl create namespace monitoring
+
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+
+helm search repo  kube-prometheus-stack
+
+helm pull prometheus-community/kube-prometheus-stack
+```
+
+```yaml
+# 修改value.yaml中的存储部分
+
+    ## Prometheus StorageSpec for persistent data
+    ## ref: https://github.com/coreos/prometheus-operator/blob/master/Documentation/user-guides/storage.md
+    ##
+    storageSpec:
+       volumeClaimTemplate:
+         spec:
+           storageClassName: harbor-ceph-rdb
+           accessModes: ["ReadWriteOnce"]
+           resources:
+             requests:
+               storage: 50Gi
+    #    selector: {}
+```
+
+```shell
+helm install kube-prometheus-stack ./kube-prometheus-stack --set rbacEnable=true --namespace=monitoring -f ./values.yaml
+```
+
+## Q&A
+
+### Etcd 无法监控
+
+Prometheus 默认监控 etcd 的 2379 端口，而新版本 kubeadm 安装的 ectd 的 metrics 端口改为 2381，故需要修改 values.yaml 中的ectd 端口并重启 kubelet，才能完成对 etcd 的正常监控。
+
+![img](../assets/exporter_5.png)
+
+![img](../assets/exporter_6.png)
+
+### Kube-schduler 和 Kube-controller-manager 无法监控
+
+![image-20210720135912403](C:/Users/levine/Desktop/k8s-tools/images/image-20210720135912403.png)
+
+![image-20210720140007867](C:/Users/levine/Desktop/k8s-tools/images/image-20210720140007867.png)
+
+kubeadm 安装默认会有 -port=0 参数，需要将其注释，添加 --address=0.0.0.0 的配置并重启 kubelet，才能监控。
+
+![img](../assets/exporter_7.png)
+
+![img](../assets/exporter_8.png)
+
+### Kube-proxy 无法监控
+
+默认情况下，kube-proxy 服务监听端口只提供给 127.0.0.1，需修改为 0.0.0.0
+
+```shell
+kubectl edit cm/kube-proxy -n kube-system
+```
+
+![image-20210720140150952](../assets/exporter_9.png)
+
+```shell
+# 重启 kube-proxy
+kubectl delete pod -l k8s-app=kube-proxy -n kube-system
+```
+
 # 参考链接
 
 [1]: https://www.yuque.com/youngfit/qok2pe/nypstd#b8abd38a	"组件监控实例"
+[2]: https://baijiahao.baidu.com/s?id=1798722273949066044&amp;wfr=spider&amp;for=pc	"Prometheus 部署"
+[3]: https://baijiahao.baidu.com/s?id=1775453145487726755&amp;wfr=spider&amp;for=pc	"kube-prometheus-stack"
+[4]: https://blog.51cto.com/u_15481067/11749135	"Metrics-Server"
 
